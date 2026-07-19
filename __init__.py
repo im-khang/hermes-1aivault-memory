@@ -24,28 +24,29 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
+from agent.redact import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 
-_SERVER = Path("/Applications/1AIVault.app/Contents/MacOS/1AIVault")
-_SERVER_SCRIPT = Path(
-    "/Applications/1AIVault.app/Contents/Resources/app.asar.unpacked/"
-    """dist/main/main/mcp/server.js"""
-)
-_DB = Path.home() / ".1aivault" / "vault.db"
-_NODE_MODULES = Path("/Applications/1AIVault.app/Contents/Resources/app.asar/node_modules")
+_DEFAULT_APP = Path("/Applications/1AIVault.app")
+_DEFAULT_DB = Path.home() / ".1aivault" / "vault.db"
 _RPC_TIMEOUT = 4.0
 _MAX_RECALL_CHARS = 6000
 _MAX_SAVE_CHARS = 6000
 
-# Redact common credential forms before any write crosses into shared memory.
-_SECRET_RE = re.compile(
-    r"(?i)("
-    r"(?:sk-[a-z0-9_-]{12,}|sk_(?:nexus|live|test)_[a-z0-9_-]{8,}|"
-    r"gh[pousr]_[a-z0-9_-]{12,}|xox[baprs]-[a-z0-9-]{12,}|AIza[a-z0-9_-]{20,})"
-    r"|(?:bearer\s+)[a-z0-9._~+/=-]{12,}"
-    r"|(?:api[_-]?key|token|password|secret|connection[_-]?string)\s*[:=]\s*[^\s,;]+"
-    r")"
+_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----"
+)
+_EXTRA_SECRET_RE = re.compile(
+    r"(?i)(?:glpat-[a-z0-9_-]{12,}|AKIA[A-Z0-9]{16}|"
+    r"eyJ[a-z0-9_-]{10,}(?:\.[a-z0-9_=-]{4,}){1,2})"
+)
+_URL_USERINFO_RE = re.compile(r"((?:https?|wss?|ftp)://[^/\s:@]+:)([^/\s@]+)(@)", re.I)
+_URL_SECRET_PARAM_RE = re.compile(
+    r"([?&](?:access_token|refresh_token|id_token|token|api_key|apikey|"
+    r"client_secret|password|auth|jwt|secret|key|code|signature|x-amz-signature)=)"
+    r"([^&#\s]+)",
+    re.I,
 )
 _INJECTION_LINE_RE = re.compile(
     r"(?i)\b(ignore\s+(?:all\s+)?previous|system\s+message|developer\s+message|"
@@ -53,7 +54,18 @@ _INJECTION_LINE_RE = re.compile(
 )
 
 def _redact(text: str) -> str:
-    return _SECRET_RE.sub("[REDACTED]", str(text or ""))
+    value = str(text or "")
+    value = _PRIVATE_KEY_RE.sub("[REDACTED]", value)
+    value = _EXTRA_SECRET_RE.sub("[REDACTED]", value)
+    value = _URL_USERINFO_RE.sub(r"\1[REDACTED]\3", value)
+    value = _URL_SECRET_PARAM_RE.sub(r"\1[REDACTED]", value)
+    value = redact_sensitive_text(value, force=True, file_read=True)
+    value = re.sub(r"«redacted(?:[-:][^»]*)?»", "[REDACTED]", value)
+    return re.sub(
+        r"(?i)((?:api[_-]?key|token|password|secret|credential|auth)\s*[:=]\s*)\*{3}",
+        r"\1[REDACTED]",
+        value,
+    )
 
 
 def _safe_recall(text: str) -> str:
@@ -77,6 +89,16 @@ def _tool_text(result: Any) -> str:
         if isinstance(item, dict) and isinstance(item.get("text"), str):
             return item["text"]
     return ""
+
+
+def _tool_json(result: Any) -> Any:
+    raw = _tool_text(result)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
 
 
 def _search_text(result: Any) -> str:
@@ -106,7 +128,13 @@ def _search_text(result: Any) -> str:
 class _McpClient:
     """Minimal synchronous MCP stdio client. One process, serialized calls."""
 
-    def __init__(self) -> None:
+    def __init__(self, app_path: Path, db_path: Path) -> None:
+        self._server = app_path / "Contents/MacOS/1AIVault"
+        self._script = (
+            app_path / "Contents/Resources/app.asar.unpacked/dist/main/main/mcp/server.js"
+        )
+        self._node_modules = app_path / "Contents/Resources/app.asar/node_modules"
+        self._db = db_path
         self._process: Optional[subprocess.Popen] = None
         self._next_id = 0
         self._lock = threading.RLock()
@@ -115,9 +143,9 @@ class _McpClient:
         if self._process and self._process.poll() is None:
             return
         env = os.environ.copy()
-        env.update({"ELECTRON_RUN_AS_NODE": "1", "NODE_PATH": str(_NODE_MODULES)})
+        env.update({"ELECTRON_RUN_AS_NODE": "1", "NODE_PATH": str(self._node_modules)})
         self._process = subprocess.Popen(
-            [str(_SERVER), str(_SERVER_SCRIPT), "--source", "hermes", "--db", str(_DB)],
+            [str(self._server), str(self._script), "--source", "hermes", "--db", str(self._db)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -129,7 +157,7 @@ class _McpClient:
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "hermes-1aivault-memory", "version": "0.1.0"},
+                "clientInfo": {"name": "hermes-1aivault-memory", "version": "0.2.0"},
             },
         )
         self._notify("notifications/initialized")
@@ -200,12 +228,52 @@ class OneAIVaultMemoryProvider(MemoryProvider):
         return "1aivault-memory"
 
     def __init__(self) -> None:
-        self._client = _McpClient()
+        self._app_path = _DEFAULT_APP
+        self._db_path = _DEFAULT_DB
+        self._load_config()
+        self._client = _McpClient(self._app_path, self._db_path)
+        self._profile_tag = "hermes-profile:default"
 
     def is_available(self) -> bool:
-        return _SERVER.is_file() and _SERVER_SCRIPT.is_file() and _DB.is_file()
+        return (
+            (self._app_path / "Contents/MacOS/1AIVault").is_file()
+            and (self._app_path / "Contents/Resources/app.asar.unpacked/dist/main/main/mcp/server.js").is_file()
+            and self._db_path.is_file()
+        )
+
+    def _load_config(self) -> None:
+        try:
+            from hermes_constants import get_hermes_home
+
+            path = get_hermes_home() / "1aivault-memory.json"
+            values = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        except Exception:
+            values = {}
+        self._app_path = Path(values.get("app_path") or _DEFAULT_APP).expanduser()
+        self._db_path = Path(values.get("db_path") or _DEFAULT_DB).expanduser()
+
+    def get_config_schema(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "key": "app_path",
+                "description": "1AIVault.app bundle path",
+                "default": str(_DEFAULT_APP),
+            },
+            {
+                "key": "db_path",
+                "description": "Shared 1AIVault database path",
+                "default": str(_DEFAULT_DB),
+            },
+        ]
+
+    def save_config(self, values: Dict[str, Any], hermes_home: str) -> None:
+        path = Path(hermes_home) / "1aivault-memory.json"
+        path.write_text(json.dumps(values, indent=2) + "\n", encoding="utf-8")
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
+        identity = str(kwargs.get("agent_identity") or "default").strip().lower()
+        identity = re.sub(r"[^a-z0-9._-]+", "-", identity).strip("-") or "default"
+        self._profile_tag = f"hermes-profile:{identity}"
         # Do not connect during availability checks. Warm connection now; failure
         # stays fail-soft and the first real recall retries once.
         if self.is_available():
@@ -252,28 +320,77 @@ class OneAIVaultMemoryProvider(MemoryProvider):
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        if action not in {"add", "replace"} or not content or not self.is_available():
+        if action not in {"add", "replace", "remove"} or not self.is_available():
+            return
+        old_text = str((metadata or {}).get("old_text") or "").strip()
+        if action in {"replace", "remove"} and not old_text:
             return
         safe_content = _redact(content)[:_MAX_SAVE_CHARS]
         category = "preference" if target == "user" else "fact"
         try:
-            self._client.call(
-                "vault_save",
-                {
-                    "content": safe_content,
-                    "title": "Shared agent memory",
-                    "tags": [
-                        "shared-memory",
-                        "agent:hermes",
-                        "agent:claude-code",
-                        "agent:codex",
-                    ],
-                    "keywords": ["shared memory", "Hermes", "Claude Code", "Codex"],
-                    "category": category,
-                },
-            )
+            ids = self._find_shared_entry_ids(old_text) if old_text else []
+            if action == "remove":
+                for entry_id in ids:
+                    self._client.call(
+                        "vault_forget_entry",
+                        {"id": entry_id, "reason": "Removed from Hermes built-in memory"},
+                    )
+                return
+
+            payload = {
+                "content": safe_content,
+                "title": "Shared agent memory",
+                "tags": self._shared_tags(),
+                "keywords": ["shared memory", "Hermes", "Claude Code", "Codex"],
+                "category": category,
+            }
+            if action == "replace" and ids:
+                for entry_id in ids:
+                    self._client.call("vault_update", {"id": entry_id, **payload})
+            else:
+                self._client.call("vault_save", payload)
         except Exception as exc:
             logger.debug("1AIVault memory mirror failed (non-fatal): %s", exc)
+
+    def _shared_tags(self) -> List[str]:
+        return [
+            "shared-memory",
+            "agent:hermes",
+            "agent:claude-code",
+            "agent:codex",
+            self._profile_tag,
+        ]
+
+    def _find_shared_entry_ids(self, old_text: str) -> List[str]:
+        query = " ".join(old_text.replace('"', " ").split())[:500]
+        result = self._client.call(
+            "vault_search",
+            {
+                "query": (
+                    f'"{query}" source:hermes tag:shared-memory '
+                    f'tag:{self._profile_tag}'
+                ),
+                "limit": 20,
+                "response_format": "detailed",
+            },
+        )
+        payload = _tool_json(result)
+        rows = payload if isinstance(payload, list) else payload.get("results", [])
+        ids: List[str] = []
+        for row in rows:
+            if not isinstance(row, dict) or not row.get("id"):
+                continue
+            detail = _tool_json(
+                self._client.call(
+                    "vault_get",
+                    {"id": row["id"], "format": "full", "offset": 0, "max_chars": 20000},
+                )
+            )
+            tags = detail.get("tags") or row.get("tags") or []
+            haystack = str(detail.get("content") or detail.get("summary") or "")
+            if "shared-memory" in tags and old_text in haystack:
+                ids.append(str(row["id"]))
+        return ids
 
     def shutdown(self) -> None:
         self._client.close()

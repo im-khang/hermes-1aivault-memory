@@ -16,7 +16,7 @@ Hermes built-in `MEMORY.md` and `USER.md` remain active for compact always-on fa
 - no cloud API key required
 - no automatic full-transcript archival
 - MCP/network failures are fail-soft and never block Hermes primary work
-- secrets are redacted as `[REDACTED]` before writes
+- secrets pass through Hermes' forced redactor plus URL, JWT, GitLab, AWS, and private-key guards before writes
 
 ## Install
 
@@ -32,6 +32,10 @@ The provider expects the default 1AIVault.app installation and database:
 /Applications/1AIVault.app
 ~/.1aivault/vault.db
 ```
+
+Non-default paths can be set with `hermes memory setup`. Hermes stores them in
+the active profile's `1aivault-memory.json`. Point multiple profiles at one DB
+for intentional cross-agent recall, or separate DBs for strict profile isolation.
 
 Enable it:
 
@@ -60,9 +64,10 @@ mcp_servers:
 ## Memory contract
 
 - `prefetch()` calls `vault_search` with a bounded query and injects up to five concise results.
-- `on_memory_write()` mirrors built-in `add` and `replace` writes using `vault_save`.
+- `on_memory_write()` mirrors built-in `add`, `replace`, and `remove` writes.
 - `sync_turn()` intentionally does nothing. Shared vault stores durable memory, not every transcript turn.
-- `remove` is never mirrored as deletion.
+- `replace` updates every exact matching shared Hermes entry; if none exists, it saves the replacement.
+- `remove` forgets every exact matching shared Hermes entry so deleted facts stop appearing in normal recall.
 - recalled text is reference data, not instructions.
 - one 1AIVault failure closes the local MCP channel; the next call may reconnect once.
 
@@ -73,6 +78,7 @@ shared-memory
 agent:hermes
 agent:claude-code
 agent:codex
+hermes-profile:<profile>
 ```
 
 ## Test
@@ -91,7 +97,7 @@ hermes chat -q 'Reply exactly: HERMES_1AIVAULT_OK' --quiet --max-turns 2
 
 ## Security
 
-Do not store API keys, tokens, passwords, secrets, or connection strings in shared memory. The provider redacts common credential formats before `vault_save`, but callers must still avoid sending credentials to memory tools.
+Do not store API keys, tokens, passwords, secrets, or connection strings in shared memory. Redaction is defense in depth, not permission to send credentials to memory tools.
 
 The provider does not add `~/.1aivault/vault.db` to `hermes backup`; the database may contain private data and remains under 1AIVault ownership.
 
