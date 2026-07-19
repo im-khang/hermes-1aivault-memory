@@ -1,6 +1,6 @@
 # 1AIVault Memory
 
-![1AIVault Memory — one vault, three agents, durable context](docs/images/readme-poster.jpg)
+![1AIVault Memory — one local vault with durable context for connected agents](docs/images/readme-poster.webp)
 
 > A local-first memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent), backed by the 1AIVault MCP server. Hermes, Claude Code, and Codex can work from the same durable vault.
 
