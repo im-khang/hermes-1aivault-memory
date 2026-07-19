@@ -2,3 +2,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .DS_Store
+.env
+.env.*
+!.env.example
+.1aivault/
+*.db
+*.db-shm
+*.db-wal
