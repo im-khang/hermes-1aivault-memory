@@ -18,8 +18,6 @@ Hermes built-in `MEMORY.md` and `USER.md` remain active for compact always-on fa
 - MCP/network failures are fail-soft and never block Hermes primary work
 - secrets are redacted as `[REDACTED]` before writes
 
-Obsidian remains canonical structured source of truth for projects and research. 1AIVault is shared recall, not a replacement for Obsidian.
-
 ## Install
 
 ```bash
@@ -53,7 +51,7 @@ mcp_servers:
       - --source
       - hermes
       - --db
-      - ~/.1aivault/vault.db
+      - /Users/YOUR_USERNAME/.1aivault/vault.db
     env:
       ELECTRON_RUN_AS_NODE: "1"
       NODE_PATH: /Applications/1AIVault.app/Contents/Resources/app.asar/node_modules
@@ -94,6 +92,8 @@ hermes chat -q 'Reply exactly: HERMES_1AIVAULT_OK' --quiet --max-turns 2
 ## Security
 
 Do not store API keys, tokens, passwords, secrets, or connection strings in shared memory. The provider redacts common credential formats before `vault_save`, but callers must still avoid sending credentials to memory tools.
+
+The provider does not add `~/.1aivault/vault.db` to `hermes backup`; the database may contain private data and remains under 1AIVault ownership.
 
 ## License
 

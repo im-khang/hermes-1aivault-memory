@@ -275,9 +275,6 @@ class OneAIVaultMemoryProvider(MemoryProvider):
         except Exception as exc:
             logger.debug("1AIVault memory mirror failed (non-fatal): %s", exc)
 
-    def backup_paths(self) -> List[str]:
-        return [str(_DB)] if _DB.exists() else []
-
     def shutdown(self) -> None:
         self._client.close()
 

@@ -26,7 +26,7 @@ class FakeClient:
     def call(self, name, args):
         self.calls.append((name, args))
         if name == "vault_search":
-            return {"content": [{"type": "text", "text": '{"results":[{"title":"Shared note","snippet":"Use Obsidian as source of truth."}]}'}]}
+            return {"content": [{"type": "text", "text": '{"results":[{"title":"Shared note","snippet":"Use project notes as source of truth."}]}'}]}
         return {"ok": True}
 
     def close(self):
@@ -37,7 +37,7 @@ provider = module.OneAIVaultMemoryProvider()
 provider._client = FakeClient()
 provider.is_available = lambda: True
 assert module._redact("api_key=dummy-value-1234") == "[REDACTED]"
-assert provider.prefetch("Obsidian source of truth") == "- Shared note: Use Obsidian as source of truth."
+assert provider.prefetch("Project notes source of truth") == "- Shared note: Use project notes as source of truth."
 provider.on_memory_write("add", "memory", "Keep shared notes usable by Claude Code and Codex.")
 name, args = provider._client.calls[-1]
 assert name == "vault_save"
