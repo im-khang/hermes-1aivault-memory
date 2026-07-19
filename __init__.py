@@ -48,6 +48,12 @@ _URL_SECRET_PARAM_RE = re.compile(
     r"([^&#\s]+)",
     re.I,
 )
+_OPAQUE_SECRET_ASSIGN_RE = re.compile(
+    r"(?i)(\b(?:[a-z0-9_.-]*(?:api[_ .-]?key|access[_-]?token|refresh[_-]?token|"
+    r"token|secret|password|passwd|credential|authorization|auth)[a-z0-9_.-]*)"
+    r"\s*[:=]\s*)(['\"]?)([^\s,;]+)\2"
+)
+_BEARER_RE = re.compile(r"(?i)(\bBearer\s+)[a-z0-9._~+/=-]{6,}")
 _INJECTION_LINE_RE = re.compile(
     r"(?i)\b(ignore\s+(?:all\s+)?previous|system\s+message|developer\s+message|"
     r"tool\s+call|prompt\s+injection|do\s+not\s+follow)\b"
@@ -59,6 +65,8 @@ def _redact(text: str) -> str:
     value = _EXTRA_SECRET_RE.sub("[REDACTED]", value)
     value = _URL_USERINFO_RE.sub(r"\1[REDACTED]\3", value)
     value = _URL_SECRET_PARAM_RE.sub(r"\1[REDACTED]", value)
+    value = _OPAQUE_SECRET_ASSIGN_RE.sub(r"\1[REDACTED]", value)
+    value = _BEARER_RE.sub(r"\1[REDACTED]", value)
     value = redact_sensitive_text(value, force=True, file_read=True)
     value = re.sub(r"«redacted(?:[-:][^»]*)?»", "[REDACTED]", value)
     return re.sub(
@@ -157,7 +165,7 @@ class _McpClient:
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "hermes-1aivault-memory", "version": "0.2.0"},
+                "clientInfo": {"name": "hermes-1aivault-memory", "version": "0.2.1"},
             },
         )
         self._notify("notifications/initialized")

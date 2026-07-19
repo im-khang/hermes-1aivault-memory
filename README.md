@@ -16,7 +16,7 @@ Hermes built-in `MEMORY.md` and `USER.md` remain active for compact always-on fa
 - no cloud API key required
 - no automatic full-transcript archival
 - MCP/network failures are fail-soft and never block Hermes primary work
-- secrets pass through Hermes' forced redactor plus URL, JWT, GitLab, AWS, and private-key guards before writes
+- secrets pass through Hermes' forced redactor plus opaque assignment, Bearer, URL, JWT, GitLab, AWS, and private-key guards before writes
 
 ## Install
 

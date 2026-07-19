@@ -1,5 +1,5 @@
 name: 1aivault-memory
-version: 0.2.0
+version: 0.2.1
 description: "Shared cross-agent memory through the local 1AIVault MCP server."
 author: "Khang Nguyen"
 kind: exclusive

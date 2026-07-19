@@ -57,6 +57,10 @@ provider.initialize("test", agent_identity="Work Profile")
 assert provider._profile_tag == "hermes-profile:work-profile"
 
 assert module._redact("api_key=dummy-value-1234") == "api_key=[REDACTED]"
+assert module._redact("api_key=opaque-secret") == "api_key=[REDACTED]"
+assert module._redact("password: opaque-secret") == "password: [REDACTED]"
+assert module._redact("TOKEN=opaque-secret") == "TOKEN=[REDACTED]"
+assert module._redact("Bearer opaque-token") == "Bearer [REDACTED]"
 assert "[REDACTED]" in module._redact("AKIA" + "A" * 16)
 assert "[REDACTED]" in module._redact("glpat-" + "a" * 16)
 assert "[REDACTED]" in module._redact("eyJ" + "a" * 12 + "." + "b" * 8)
