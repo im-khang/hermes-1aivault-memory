@@ -67,7 +67,7 @@ def _redact(text: str) -> str:
     value = _URL_SECRET_PARAM_RE.sub(r"\1[REDACTED]", value)
     value = _OPAQUE_SECRET_ASSIGN_RE.sub(r"\1[REDACTED]", value)
     value = _BEARER_RE.sub(r"\1[REDACTED]", value)
-    value = redact_sensitive_text(value, force=True, file_read=True)
+    value = redact_sensitive_text(value, force=True)
     value = re.sub(r"«redacted(?:[-:][^»]*)?»", "[REDACTED]", value)
     return re.sub(
         r"(?i)((?:api[_-]?key|token|password|secret|credential|auth)\s*[:=]\s*)\*{3}",
@@ -165,7 +165,7 @@ class _McpClient:
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "hermes-1aivault-memory", "version": "0.2.1"},
+                "clientInfo": {"name": "hermes-1aivault-memory", "version": "0.2.2"},
             },
         )
         self._notify("notifications/initialized")
@@ -370,6 +370,7 @@ class OneAIVaultMemoryProvider(MemoryProvider):
         ]
 
     def _find_shared_entry_ids(self, old_text: str) -> List[str]:
+        expected = " ".join(old_text.split())
         query = " ".join(old_text.replace('"', " ").split())[:500]
         result = self._client.call(
             "vault_search",
@@ -395,8 +396,8 @@ class OneAIVaultMemoryProvider(MemoryProvider):
                 )
             )
             tags = detail.get("tags") or row.get("tags") or []
-            haystack = str(detail.get("content") or detail.get("summary") or "")
-            if "shared-memory" in tags and old_text in haystack:
+            content = str(detail.get("content") or detail.get("summary") or "")
+            if "shared-memory" in tags and " ".join(content.split()) == expected:
                 ids.append(str(row["id"]))
         return ids
 

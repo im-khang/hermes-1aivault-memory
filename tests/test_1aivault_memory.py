@@ -12,9 +12,13 @@ agent_module = types.ModuleType("agent")
 memory_provider_module = types.ModuleType("agent.memory_provider")
 memory_provider_module.MemoryProvider = object
 redact_module = types.ModuleType("agent.redact")
-redact_module.redact_sensitive_text = lambda text, **_: re.sub(
-    r"(?i)(api[_-]?key\s*[:=]\s*)\S+", r"\1«redacted-secret»", text
-)
+
+
+def redact_sensitive_text(text, *, force=False, code_file=False):
+    return re.sub(r"(?i)(api[_-]?key\s*[:=]\s*)\S+", r"\1«redacted-secret»", text)
+
+
+redact_module.redact_sensitive_text = redact_sensitive_text
 sys.modules.setdefault("agent", agent_module)
 sys.modules.setdefault("agent.memory_provider", memory_provider_module)
 sys.modules.setdefault("agent.redact", redact_module)
@@ -42,7 +46,11 @@ class FakeClient:
                 payload = {"results": [{"title": "Shared note", "snippet": "Use project notes as source of truth."}]}
             return {"content": [{"type": "text", "text": json.dumps(payload)}]}
         if name == "vault_get":
-            payload = {"id": "entry-1", "content": "old shared fact", "tags": ["shared-memory"]}
+            payload = {
+                "id": "entry-1",
+                "content": "  old   shared\nfact  ",
+                "tags": ["shared-memory"],
+            }
             return {"content": [{"type": "text", "text": json.dumps(payload)}]}
         return {"content": [{"type": "text", "text": '{"success":true}'}]}
 
@@ -88,5 +96,9 @@ assert provider._client.calls[-1] == (
     "vault_forget_entry",
     {"id": "entry-1", "reason": "Removed from Hermes built-in memory"},
 )
+
+provider._client.calls.clear()
+provider.on_memory_write("remove", "memory", "", {"old_text": "old shared"})
+assert all(name != "vault_forget_entry" for name, _ in provider._client.calls)
 
 print("1aivault-memory self-check: OK")

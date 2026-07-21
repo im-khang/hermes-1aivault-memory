@@ -8,7 +8,7 @@
 
 ## What is new
 
-Version 0.2.1 closes the write boundary: opaque credentials and plain Bearer tokens are redacted before they can reach shared memory. Version 0.2.0 added exact replace/remove propagation, per-profile tags, and configurable app/database paths.
+Version 0.2.2 restores Hermes Agent v0.17.0 compatibility and makes replace/remove matching exact after whitespace normalization. Version 0.2.1 closed the write boundary for opaque credentials and plain Bearer tokens.
 
 ## Why
 
@@ -25,6 +25,8 @@ Version 0.2.1 closes the write boundary: opaque credentials and plain Bearer tok
 Hermes uses this repository as its memory provider. Claude Code and Codex are not installed or configured by this plugin; they participate when pointed at the same 1AIVault MCP server.
 
 ## Quick start
+
+Current platform support: macOS only. The provider launches the MCP server from the 1AIVault `.app` bundle.
 
 ```bash
 # 1. Install and enable the plugin
