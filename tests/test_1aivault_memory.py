@@ -12,9 +12,25 @@ agent_module = types.ModuleType("agent")
 memory_provider_module = types.ModuleType("agent.memory_provider")
 memory_provider_module.MemoryProvider = object
 redact_module = types.ModuleType("agent.redact")
+redact_calls = []
 
 
-def redact_sensitive_text(text, *, force=False, code_file=False):
+def redact_sensitive_text(
+    text,
+    *,
+    force=False,
+    code_file=False,
+    file_read=False,
+    redact_url_credentials=False,
+):
+    redact_calls.append(
+        {
+            "force": force,
+            "code_file": code_file,
+            "file_read": file_read,
+            "redact_url_credentials": redact_url_credentials,
+        }
+    )
     return re.sub(r"(?i)(api[_-]?key\s*[:=]\s*)\S+", r"\1«redacted-secret»", text)
 
 
@@ -65,6 +81,12 @@ provider.initialize("test", agent_identity="Work Profile")
 assert provider._profile_tag == "hermes-profile:work-profile"
 
 assert module._redact("api_key=dummy-value-1234") == "api_key=[REDACTED]"
+assert redact_calls[-1] == {
+    "force": True,
+    "code_file": False,
+    "file_read": True,
+    "redact_url_credentials": True,
+}
 assert module._redact("api_key=opaque-secret") == "api_key=[REDACTED]"
 assert module._redact("password: opaque-secret") == "password: [REDACTED]"
 assert module._redact("TOKEN=opaque-secret") == "TOKEN=[REDACTED]"

@@ -8,7 +8,7 @@
 
 ## What is new
 
-Version 0.2.2 restores Hermes Agent v0.17.0 compatibility and makes replace/remove matching exact after whitespace normalization. Version 0.2.1 closed the write boundary for opaque credentials and plain Bearer tokens.
+Version 0.2.3 targets the current Hermes Agent v0.19.0 redaction contract and applies its strict file-read and URL-credential modes at the shared-memory boundary. Replace/remove matching remains exact after whitespace normalization.
 
 ## Why
 
@@ -27,6 +27,8 @@ Hermes uses this repository as its memory provider. Claude Code and Codex are no
 ## Quick start
 
 Current platform support: macOS only. The provider launches the MCP server from the 1AIVault `.app` bundle.
+
+Current Hermes target: latest stable release, Hermes Agent v0.19.0.
 
 ```bash
 # 1. Install and enable the plugin
